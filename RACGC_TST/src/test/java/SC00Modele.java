@@ -9,8 +9,11 @@ import org.openqa.selenium.firefox.FirefoxBinary;
 import org.openqa.selenium.firefox.FirefoxProfile;
 import org.openqa.selenium.firefox.internal.ProfilesIni;
 import beans.CasEssaiBean;
+import beans.ObjectifBean;
 import constantes.Actions;
 import exceptions.SeleniumException;
+import extensions.SeleniumALMRESTWrapper;
+import extensions.SeleniumConfluenceRESTWrapper;
 import main.bean.CasEssaiRacgcBean;
 import main.constantes.Cibles;
 import main.constantes.Constantes;
@@ -101,11 +104,20 @@ public class SC00Modele extends CasEssaiRacgcBean{
 	 * @throws SeleniumException en cas d'erreur lors de la génération du fichier excel de rapport.
 	 */
 	private void finaliserTest(SeleniumOutils outils, CasEssaiBean casEssai, final String idObjectif, boolean succes) throws SeleniumException {
-		// On finalise aussi les sous cas.
-		for(CasEssaiBean sousCas : casEssai.getTests()) {
-			finaliserTest(outils, sousCas, casEssai.getNomCasEssai() + casEssai.getTime(), sousCas.getEtatFinal());
-		}
+//		// On finalise aussi les sous cas.
+//		for(CasEssaiBean sousCas : casEssai.getTests()) {
+//			finaliserTest(outils, sousCas, casEssai.getNomCasEssai() + casEssai.getTime(), sousCas.getEtatFinal());
+//		}
 		// Si le driver n'est pas nul on effectue des capture d'écran et on récupère les logs.
+		
+		// On valide l'objectif en fonction du succès du cas de test.
+		casEssai.validerObjectif(outils.getDriver(), idObjectif, succes);
+		
+		if(casEssai.getEtatFinal() == null) {
+			//System.out.println("L'état final est : " + succes);
+			casEssai.setEtatFinal(succes);
+		}
+		
 		if (outils != null) {
 			casEssai.setRegistreExecution(outils.getDriver());
 			logger(casEssai.getRegistreExecution() + "\n" + casEssai.toString());
@@ -115,30 +127,34 @@ public class SC00Modele extends CasEssaiRacgcBean{
 				outils.captureEcran("captureFinale" + casEssai.getNomCasEssai(), casEssai.getNomCasEssai());
 			}
 		}
-		// On valide l'objectif en fonction du succès du cas de test.
-		casEssai.validerObjectif(outils.getDriver(), idObjectif, succes);
 		//setCasEssai(casEssai);
 
 		logger(casEssai.toString());
 
 		//TODO A remettre
 //		if (outils != null) {
-//			outils.getDriver().quit();
+//			outils.getDriver().close();
+//		    try {
+//		    	outils.getDriver().quit();
+//		    }catch(Exception e){
+//		        System.out.println("Impossible de quitter le driver en raison d'une erreur.");
+//		    }
 //		}
 
 		// On renseigne le rapport d'execution avec les données du cas de test.
 		XLSOutils.renseignerExcel(casEssai);
 		
 		// On tente de mettre à jour ALM
-		if (casEssai.getAlm()) {
-			try {
-				ALMOutils.miseAJourTestSet(casEssai, succes);
-				System.out.println("Mise à jour effectuée dans ALM");
-			} catch (SeleniumException ex) {
-				ex.printStackTrace();
-				System.out.println("Mise à jour impossible à effectuée dans ALM : " + ex.toString());
-			}	
-		}
+		try {
+			//ALMOutils.miseAJourTestSet(casEssai, succes);
+			SeleniumALMRESTWrapper.miseAJourTestSet(casEssai, succes);
+			SeleniumConfluenceRESTWrapper.miseAJourConfluence(casEssai);
+			System.out.println("Mise à jour effectuée dans ALM");
+		} catch (SeleniumException ex) {
+			ex.printStackTrace();
+			System.out.println("Mise à jour impossible à effectuée dans ALM : " + ex.getMessage());
+		}	
+
 	}
 	
 	/**
@@ -242,6 +258,87 @@ public class SC00Modele extends CasEssaiRacgcBean{
 		// Attente de l'affichage du titre de la page
 		outil.attendreChargementPage(titre);
 	}	
+	
+	/**
+	 * Cas de test decrivant l'affichage et la validation du formulaire de simulation OPENGO
+	 * @param scenario0 le scénario auxquel appartient le cas de test
+	 * @param outil la boite à outil
+	 * @return le resultat du cas de test
+	 * @throws SeleniumException en cas d'erreur
+	 */
+	public CasEssaiRacgcBean CT01AccesViaSimulationOPENGO(CasEssaiRacgcBean scenario0, SeleniumOutils outil) throws SeleniumException {
+
+		// Déclaration du cas de test numéro 1
+		CasEssaiRacgcBean CT01 = new CasEssaiRacgcBean();
+		CT01.setAlm(scenario0.getAlm());
+		CT01.setNomCasEssai("CT01 -" + getTime());
+		CT01.setRepertoireTelechargement(scenario0.getRepertoireTelechargement());	
+		
+		//Gestion des steps
+		CT01.ajouterObjectif(new ObjectifBean("Test arrive a terme", CT01.getNomCasEssai() + CT01.getTime()));
+		CT01.ajouterStep("Ouverture de l'url de la simu opengo", "ACCESSIMUOPENGO", "Le formulaire s'affiche");
+		CT01.ajouterStep("Renseignement du formulaire et validation", "RENSEIGNEMENTFORMOPENGO", "L'accès à l'ihm se fait");
+		
+		///////////////////////////////////////////////////////////////////////////////////////////////////////
+		// Déroulement du cas de test
+ 		///////////////////////////////////////////////////////////////////////////////////////////////////////
+		String url = Constantes.URL_APP_RACGC;
+		String titre = Constantes.TITRE_PAGE_RACGC;
+		// Accès à google
+		outil.chargerUrl(url);
+		// Attente de l'affichage du titre de la page
+		outil.attendreChargementPage(titre);
+		CT01.validerObjectif(outil.getDriver(), "ACCESSIMUOPENGO", true);
+		
+		// Remplir les données openGo
+		outil.action(Actions.VIDER_ET_SAISIR, Cibles.CD_DISTR, Constantes.CD_DISTR); 
+		outil.action(Actions.VIDER_ET_SAISIR, Cibles.CONTRAT_SICLID, Constantes.UNITED_CONTRAT); 
+		outil.action(Actions.VIDER_ET_SAISIR, Cibles.IUN, Constantes.IUN); 
+		outil.action(Actions.VIDER_ET_SAISIR, Cibles.ID_UNITED, Constantes.ID_UNITED); 
+		outil.action(Actions.VIDER_ET_SAISIR, Cibles.PWD_UNITED, Constantes.PWD_UNITED); 
+        // Remplir le formulaire et le valider
+        outil.action(Actions.CLIQUER, Cibles.ACCEDER_RACGC);
+        //changer la fenetre pour afficher la fenetre réaménagement de créances
+        outil.changerDeFenetre();
+        
+		// Attente de l'affichage du titre de la page
+		outil.attendreChargementPage(titre);
+		CT01.validerObjectif(outil.getDriver(), "RENSEIGNEMENTFORMOPENGO", true);
+		
+		return CT01;
+	}
+
+		
+//		outil.action(Actions.CLIQUER, Cibles.VALIDER);
+//		outil.action(Actions.VIDER_ET_SAISIR, Cibles.MENSUALITE, Constantes.MENSUALITE); 
+//		outil.action(Actions.CLIQUER, Cibles.SIMULER);
+//		outil.action(Actions.CLIQUER, Cibles.ENREGISTRER_SIMULER);
+//		outil.action(Actions.CLIQUER, Cibles.ETAT_DU_DOSSIER);
+//		outil.action(Actions.CLIQUER, Cibles.VALIDER_EN_CONTRAT_DE_CREDIT);
+//		outil.action(Actions.CLIQUER, Cibles.VALIDER_FINALISATION_INSTRUCTION);
+//		outil.action(Actions.CLIQUER, Cibles.VALIDER_DOSSIER);
+//		
+//		outil.action(Actions.CLIQUER, Cibles.EDITER);
+//		outil.action(Actions.CLIQUER, Cibles.PASSER_ETUDE);
+//		outil.action(Actions.CLIQUER, Cibles.FERMER_POPUP);
+//		//System.out.println("coucou  SimpleDateFormat "+ );
+//		outil.action(Actions.CLIQUER, Cibles.PROCEDER_A_ETUDE);
+//
+//		java.util.Date actuelle = new java.util.Date();
+//		 DateFormat dateFormat = new SimpleDateFormat("dd/MM/yyyy");
+//		 String dat = dateFormat.format(actuelle);
+//		 System.out.println("======================");
+//		 System.out.println("La date affichée est: " + dat);
+//		
+//		outil.action(Actions.CLIQUER, Cibles.DECISION_REFUS);
+//		outil.action(Actions.SELECTIONNER, Cibles.MOTOF_REFUS, "Contrat non valide"); 
+//		outil.action(Actions.VIDER_ET_SAISIR, Cibles.DATESIGNATURE, dat);
+//		
+//		outil.action(Actions.CLIQUER, Cibles.FINALISER_OCTROI);
+//		outil.action(Actions.CLIQUER, Cibles.VALIDER_FINALISATION_OCTROI);
+//		outil.action(Actions.CLIQUER, Cibles.QUITTER);
+//	}
+	
 	public void accederARacGc(SeleniumOutils outil) throws SeleniumException {
 
 		String url = Constantes.URL_APP_RACGC;
